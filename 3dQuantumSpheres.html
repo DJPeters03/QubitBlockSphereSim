@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D Bloch Sphere Visualizer — Entanglement & Foosball</title>
+  <style>
+    :root{--bg:#0b0f1a;--panel:#0e1628;--ink:#e8eefc;--muted:#9fb0d8;--accent:#7ee787;--danger:#ff7b72;--gold:#ffd166;--grid:#243155;--axis:#6ea8fe}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    #wrap{display:grid;grid-template-columns:320px 1fr;min-height:100vh}
+    aside{background:var(--panel);padding:14px;border-right:1px solid #17213b;overflow:auto}
+    h1{font-size:18px;margin:0 0 8px}
+    h2{font-size:14px;margin:16px 0 6px;color:var(--muted)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .row>*{flex:1}
+    label{display:block;margin:8px 0 4px;color:var(--muted)}
+    input[type=range]{width:100%}
+    button{background:#162246;color:var(--ink);border:1px solid #223163;border-radius:10px;padding:8px 10px;cursor:pointer}
+    button:hover{filter:brightness(1.1)}
+    button.active{outline:2px solid var(--accent)}
+    .pill{display:inline-block;background:#15223f;border:1px solid #223163;padding:4px 8px;border-radius:20px;margin-right:6px}
+    .state{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    canvas{display:block;width:100%;height:100%}
+    #sceneWrap{position:relative;height:100vh}
+    #hud{position:absolute;top:8px;left:8px;color:#cfe1ff;font:12px ui-monospace,Menlo,Consolas}
+    .note{color:var(--muted);font-size:12px}
+    .sep{height:1px;background:#1b2747;margin:10px 0}
+    .footer{color:var(--muted);font-size:12px;margin-top:8px}
+    #viewGrid{height:100%;position:absolute;inset:0;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    #viewGrid>div{height:100%;min-height:320px}
+    #testsPanel summary{cursor:pointer}
+    #testsList{list-style:none;padding:0;margin:6px 0}
+    #testsList li{margin:2px 0}
+    .ok{color:#7ee787}
+    .fail{color:#ff7b72}
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <aside>
+      <h1>3D Bloch Sphere Visualizer</h1>
+      <div class="pill">Rotate: drag • Zoom: wheel • Pan: right‑drag</div>
+      <h2>State |ψ⟩ (Left sphere)</h2>
+      <label>θ (polar) <span id="thetaOut"></span></label>
+      <input id="theta" type="range" min="0" max="3.14159" step="0.001" value="1.0472" />
+      <label>φ (azimuth) <span id="phiOut"></span></label>
+      <input id="phi" type="range" min="-3.14159" max="3.14159" step="0.001" value="0.7854" />
+      <div class="row" style="margin-top:6px">
+        <button data-preset="z+">|0⟩</button>
+        <button data-preset="z-">|1⟩</button>
+        <button data-preset="x+">|+⟩</button>
+        <button data-preset="x-">|−⟩</button>
+        <button data-preset="y+">|+i⟩</button>
+        <button data-preset="y-">|−i⟩</button>
+      </div>
+      <div style="margin-top:8px" class="state" id="ket">|ψ⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩</div>
+      <div class="sep"></div>
+      <h2>Entanglement</h2>
+      <div class="row">
+        <button id="entOff" class="active">Off</button>
+        <button id="entOn">On</button>
+      </div>
+      <div class="row" id="bellRow" style="margin-top:6px;display:none">
+        <button data-bell="phi+" class="active">|Φ⁺⟩</button>
+        <button data-bell="phi-">|Φ⁻⟩</button>
+        <button data-bell="psi+">|Ψ⁺⟩</button>
+        <button data-bell="psi-">|Ψ⁻⟩</button>
+      </div>
+      <div id="measureRow" style="display:none">
+        <h2>Measure (collapses pair)</h2>
+        <div class="row">
+          <button data-meas="Z">Measure Z</button>
+          <button data-meas="X">Measure X</button>
+        </div>
+        <div class="note" id="measNote">Perfect (anti)correlations shown per Bell state.</div>
+      </div>
+      <div class="sep"></div>
+      <h2>Quantum Foosball (equator)</h2>
+      <div class="note">Move your paddle by changing φ (above). Hit the flying phase‑ball on the equator line. First to 5!</div>
+      <div class="row" style="margin-top:6px">
+        <button id="startFoos">Start</button>
+        <button id="stopFoos">Stop</button>
+        <span id="score" class="pill">You 0 : 0 AI</span>
+      </div>
+      <div class="sep"></div>
+      <details id="testsPanel" open>
+        <summary>Self‑tests</summary>
+        <ul id="testsList" class="state"></ul>
+        <div class="note">If any test fails, copy the messages and your browser info.</div>
+      </details>
+      <div class="sep"></div>
+      <div class="footer">Made with Three.js • This is a teaching toy — not a simulator.</div>
+    </aside>
+    <div id="sceneWrap">
+      <div id="hud"></div>
+      <div class="grid" id="viewGrid">
+        <div id="viewL"></div>
+        <div id="viewR"></div>
+      </div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script>
+  ;(() => {
+    if(!window.THREE){document.addEventListener('DOMContentLoaded',()=>{const ul=document.getElementById('testsList');if(ul){const li=document.createElement('li');li.className='fail';li.textContent='✖ THREE failed to load';ul.appendChild(li)}});return}
+    class OrbitControls{constructor(camera,dom){this.camera=camera;this.dom=dom;this.target=new THREE.Vector3(0,0,0);this.enableDamping=true;this.dampingFactor=0.07;this.spherical={r:3,phi:Math.PI/3,theta:Math.PI/4};this.state=null;this.last={x:0,y:0};this.zoomSpeed=1.1;this.rotateSpeed=1.0;this.panSpeed=0.002;dom.addEventListener('mousedown',e=>this.onDown(e));dom.addEventListener('mousemove',e=>this.onMove(e));dom.addEventListener('mouseup',e=>this.onUp(e));dom.addEventListener('mouseleave',e=>this.onUp(e));dom.addEventListener('contextmenu',e=>e.preventDefault());dom.addEventListener('wheel',e=>this.onWheel(e),{passive:false});dom.addEventListener('touchstart',e=>this.onTouchStart(e),{passive:false});dom.addEventListener('touchmove',e=>this.onTouchMove(e),{passive:false});dom.addEventListener('touchend',e=>this.onTouchEnd(e))}onDown(e){this.state=e.button===2?'pan':'rot';this.last.x=e.clientX;this.last.y=e.clientY}onMove(e){if(!this.state)return;const dx=e.clientX-this.last.x;const dy=e.clientY-this.last.y;this.last.x=e.clientX;this.last.y=e.clientY;if(this.state==='rot'){this.spherical.theta-=dx*0.005*this.rotateSpeed;this.spherical.phi=THREE.MathUtils.clamp(this.spherical.phi+dy*0.005*this.rotateSpeed,0.001,Math.PI-0.001)}else{const panX=-dx*this.panSpeed*this.spherical.r;const panY=dy*this.panSpeed*this.spherical.r;const m=new THREE.Matrix4().lookAt(this.camera.position,this.target,new THREE.Vector3(0,1,0));const xAxis=new THREE.Vector3(m.elements[0],m.elements[1],m.elements[2]);const yAxis=new THREE.Vector3(m.elements[4],m.elements[5],m.elements[6]);this.target.add(xAxis.multiplyScalar(panX));this.target.add(yAxis.multiplyScalar(panY))}}onUp(){this.state=null}onWheel(e){e.preventDefault();const s=e.deltaY<0?1/this.zoomSpeed:this.zoomSpeed;this.spherical.r=THREE.MathUtils.clamp(this.spherical.r*s,1.2,20)}onTouchStart(e){if(e.touches.length===1){this.state='rot';this.last.x=e.touches[0].clientX;this.last.y=e.touches[0].clientY}else if(e.touches.length===2){this.state='zoom';this.td=this.dist(e.touches)}}onTouchMove(e){if(this.state==='rot'&&e.touches.length===1){const dx=e.touches[0].clientX-this.last.x;const dy=e.touches[0].clientY-this.last.y;this.last.x=e.touches[0].clientX;this.last.y=e.touches[0].clientY;this.spherical.theta-=dx*0.005*this.rotateSpeed;this.spherical.phi=THREE.MathUtils.clamp(this.spherical.phi+dy*0.005*this.rotateSpeed,0.001,Math.PI-0.001)}else if(this.state==='zoom'&&e.touches.length===2){const d=this.dist(e.touches);const s=this.td/d;this.spherical.r=THREE.MathUtils.clamp(this.spherical.r*s,1.2,20);this.td=d}}onTouchEnd(){this.state=null}dist(t){const dx=t[0].clientX-t[1].clientX;const dy=t[0].clientY-t[1].clientY;return Math.hypot(dx,dy)}update(){const sinPhi=Math.sin(this.spherical.phi);const x=this.spherical.r*sinPhi*Math.cos(this.spherical.theta);const y=this.spherical.r*Math.cos(this.spherical.phi);const z=this.spherical.r*sinPhi*Math.sin(this.spherical.theta);this.camera.position.set(x+this.target.x,y+this.target.y,z+this.target.z);this.camera.lookAt(this.target)}}
+    THREE.OrbitControls=OrbitControls;
+    const tests=[];function addTest(name,pass,info=""){tests.push({name,pass,info})}function renderTests(){const ul=document.getElementById('testsList');if(!ul)return;ul.innerHTML="";for(const t of tests){const li=document.createElement('li');li.className=t.pass?'ok':'fail';li.textContent=`${t.pass?'✔':'✖'} ${t.name}${t.info?' — '+t.info:''}`;ul.appendChild(li)}}
+    addTest('THREE global present',!!window.THREE);addTest('OrbitControls present',!!(window.THREE&&THREE.OrbitControls));
+    const can=document.createElement('canvas');const gl=can.getContext('webgl2')||can.getContext('webgl');addTest('WebGL context available',!!gl);
+    if(!window.THREE||!THREE.OrbitControls||!gl){renderTests();const hud=document.getElementById('hud');hud.textContent='WebGL/Three.js not available. See Self‑tests for details.';return}
+    const TAU=Math.PI*2;const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));const deg=r=>(r*180/Math.PI).toFixed(2)+'°';
+    function makeBloch(container){
+      const scene=new THREE.Scene();scene.background=new THREE.Color('#0b0f1a');
+      const camera=new THREE.PerspectiveCamera(36,1,0.1,100);camera.position.set(2.1,1.8,2.6);
+      const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(window.devicePixelRatio||1);container.appendChild(renderer.domElement);
+      const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.07;
+      const key=new THREE.DirectionalLight(0xffffff,0.9);key.position.set(3,3,3);const fill=new THREE.DirectionalLight(0xffffff,0.6);fill.position.set(-2,1,0);const amb=new THREE.AmbientLight(0x446688,0.4);scene.add(key,fill,amb);
+      const R=1;const sphereGeo=new THREE.SphereGeometry(R,48,48);const sphereMat=new THREE.MeshStandardMaterial({color:0x0f1a33,metalness:0.1,roughness:0.9,transparent:true,opacity:0.9});const sphere=new THREE.Mesh(sphereGeo,sphereMat);scene.add(sphere);
+      const grid=new THREE.Group();const gridMat=new THREE.LineBasicMaterial({color:0x3a4c81,transparent:true,opacity:0.9});
+      for(let i=0;i<12;i++){const g=new THREE.BufferGeometry();const pts=[];const phi=i*TAU/12;for(let j=0;j<=128;j++){const t=j/128*TAU;const x=R*Math.cos(phi)*Math.sin(t);const y=R*Math.cos(t);const z=R*Math.sin(phi)*Math.sin(t);pts.push(x,y,z)}g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));grid.add(new THREE.Line(g,gridMat))}
+      for(let i=1;i<6;i++){const g=new THREE.BufferGeometry();const pts=[];const th=i*Math.PI/6;for(let j=0;j<=128;j++){const ph=j/128*TAU;const x=R*Math.sin(th)*Math.cos(ph);const y=R*Math.cos(th);const z=R*Math.sin(th)*Math.sin(ph);pts.push(x,y,z)}g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));grid.add(new THREE.Line(g,gridMat))}
+      scene.add(grid);
+      const axisMat=new THREE.LineBasicMaterial({color:0x6ea8fe});const axes=new THREE.Group();function axis(x1,y1,z1,x2,y2,z2){const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x1,y1,z1),new THREE.Vector3(x2,y2,z2)]);axes.add(new THREE.Line(g,axisMat))}axis(-R*1.2,0,0,R*1.2,0,0);axis(0,-R*1.2,0,0,R*1.2,0);axis(0,0,-R*1.2,0,0,R*1.2);scene.add(axes);
+      const labelGroup=new THREE.Group();const mkSprite=(text,color)=>{const c=document.createElement('canvas');c.width=256;c.height=128;const ctx=c.getContext('2d');ctx.fillStyle='rgba(0,0,0,0)';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle=color;ctx.font='28px system-ui, -apple-system, Segoe UI, Roboto, Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,c.width/2,c.height/2);const tex=new THREE.CanvasTexture(c);tex.needsUpdate=true;const mat=new THREE.SpriteMaterial({map:tex,transparent:true});const sp=new THREE.Sprite(mat);sp.scale.set(0.7,0.35,1);return sp};
+      const lbl={zPlus:mkSprite('|0⟩','#cfe1ff'),zMinus:mkSprite('|1⟩','#cfe1ff'),xPlus:mkSprite('|+⟩','#cfe1ff'),xMinus:mkSprite(' |−⟩','#cfe1ff'),yPlus:mkSprite('|+i⟩','#cfe1ff'),yMinus:mkSprite('|−i⟩','#cfe1ff')};
+      lbl.zPlus.position.set(0,R*1.25,0);lbl.zMinus.position.set(0,-R*1.25,0);lbl.xPlus.position.set(R*1.25,0,0);lbl.xMinus.position.set(-R*1.25,0,0);lbl.yPlus.position.set(0,0,R*1.25);lbl.yMinus.position.set(0,0,-R*1.25);labelGroup.add(...Object.values(lbl));scene.add(labelGroup);
+      const dir=new THREE.Vector3(0,1,0);const origin=new THREE.Vector3(0,0,0);const length=1.0;const color=0x7ee787;let arrow=new THREE.ArrowHelper(dir,origin,length,color,0.15,0.08);scene.add(arrow);
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(R,0.006,8,128),new THREE.MeshBasicMaterial({color:0x9fb0d8}));ring.rotation.x=Math.PI/2;scene.add(ring);
+      const ball=new THREE.Mesh(new THREE.SphereGeometry(0.04,16,16),new THREE.MeshBasicMaterial({color:0xfff0a6}));scene.add(ball);
+      const mkPaddle=col=>new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.2,8),new THREE.MeshBasicMaterial({color:col}));
+      const paddleUser=mkPaddle(0x7ee787);const paddleAI=mkPaddle(0xff7b72);scene.add(paddleUser,paddleAI);
+      function resize(){const rect=container.getBoundingClientRect();const w=rect.width,h=rect.height;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+      new ResizeObserver(resize).observe(container);resize();
+      function setVector(th,ph){const x=Math.sin(th)*Math.cos(ph);const y=Math.cos(th);const z=Math.sin(th)*Math.sin(ph);dir.set(x,y,z).normalize();scene.remove(arrow);arrow=new THREE.ArrowHelper(dir.clone().normalize(),origin,length,color,0.15,0.08);scene.add(arrow);setPaddleAngles(ph,aiAngle)}
+      let ballAngle=0,ballVel=0.02;let aiAngle=0;let foosOn=false;let userScore=0,aiScore=0;const scoreEl=document.querySelector('#score');
+      function setPaddleAngles(phiUser,phiAI){const RU=R*1.02;const setPad=(mesh,ang)=>{mesh.position.set(RU*Math.cos(ang),0,RU*Math.sin(ang));mesh.rotation.z=ang};setPad(paddleUser,phiUser);setPad(paddleAI,phiAI)}
+      function resetBall(){ballAngle=(Math.random()*TAU);ballVel=(Math.random()<0.5?1:-1)*(0.018+Math.random()*0.01);updateBallPos()}
+      function updateBallPos(){const RB=R*1.0;ball.position.set(RB*Math.cos(ballAngle),0,RB*Math.sin(ballAngle))}
+      function foosStep(){if(!foosOn)return;ballAngle=(ballAngle+ballVel+TAU)%TAU;updateBallPos();const diff=((ballAngle-aiAngle+Math.PI)%TAU)-Math.PI;aiAngle+=clamp(diff,-0.028,0.028);setPaddleAngles(current.phi,aiAngle);const hitUser=Math.abs(((ballAngle-current.phi+Math.PI)%TAU)-Math.PI)<0.10;const hitAI=Math.abs(((ballAngle-aiAngle+Math.PI)%TAU)-Math.PI)<0.10;if(hitUser&&ballVel>0){ballVel*=-1.05;userScore++;updateScore()}if(hitAI&&ballVel<0){ballVel*=-1.05;aiScore++;updateScore()}ballVel=clamp(ballVel,-0.08,0.08)}
+      function updateScore(){scoreEl.textContent=`You ${userScore} : ${aiScore} AI`}
+      renderer.setAnimationLoop(()=>{controls.update();foosStep();renderer.render(scene,camera)});
+      return{resize,setVector,setFoos(on){foosOn=on;if(on){resetBall();userScore=0;aiScore=0;updateScore()}},setUserPhi(phi){setPaddleAngles(phi,aiAngle)},collapseTo(theta,phi){setVector(theta,phi)},setAIphi(phi){aiAngle=phi;setPaddleAngles(current.phi,aiAngle)},markNoVector(){scene.remove(arrow);const halo=new THREE.Mesh(new THREE.SphereGeometry(R*0.99,32,32),new THREE.MeshBasicMaterial({color:0x7ee787,transparent:true,opacity:0.12}));halo.name='halo';scene.children.filter(n=>n.name==='halo').forEach(n=>scene.remove(n));scene.add(halo)},clearHalo(){scene.children.filter(n=>n.name==='halo').forEach(n=>scene.remove(n))},getInfo(){return{dir:dir.clone()}}}
+    }
+    const left=makeBloch(document.querySelector('#viewL'));const right=makeBloch(document.querySelector('#viewR'));
+    const theta=document.querySelector('#theta');const phi=document.querySelector('#phi');const thetaOut=document.querySelector('#thetaOut');const phiOut=document.querySelector('#phiOut');const ketOut=document.querySelector('#ket');
+    const current={theta:+theta.value,phi:+phi.value};
+    function updateLabels(){thetaOut.textContent=`= ${deg(current.theta)}`;phiOut.textContent=`= ${deg(current.phi)}`;ketOut.textContent=`|ψ⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩\nθ=${(current.theta).toFixed(3)}, φ=${(current.phi).toFixed(3)}`}
+    function updateVectors(){left.setVector(current.theta,current.phi);if(!entangled)right.setVector(current.theta,current.phi);left.clearHalo();right.clearHalo();updateLabels()}
+    theta.addEventListener('input',e=>{current.theta=+e.target.value;updateVectors()});
+    phi.addEventListener('input',e=>{current.phi=+e.target.value;left.setUserPhi(current.phi);updateVectors()});
+    const presets={'z+':[0,0],'z-':[Math.PI,0],'x+':[Math.PI/2,0],'x-':[Math.PI/2,Math.PI],'y+':[Math.PI/2,Math.PI/2],'y-':[Math.PI/2,-Math.PI/2]};
+    document.querySelectorAll('[data-preset]').forEach(btn=>{btn.addEventListener('click',()=>{const [th,ph]=presets[btn.dataset.preset];theta.value=th;phi.value=ph;current.theta=th;current.phi=ph;updateVectors()})});
+    let entangled=false;let bell='phi+';let collapsed=false;const entOff=document.querySelector('#entOff');const entOn=document.querySelector('#entOn');const bellRow=document.querySelector('#bellRow');const measureRow=document.querySelector('#measureRow');
+    function setEnt(on){entangled=on;collapsed=false;entOff.classList.toggle('active',!on);entOn.classList.toggle('active',on);bellRow.style.display=on?'flex':'none';measureRow.style.display=on?'block':'none';if(on){left.markNoVector();right.markNoVector()}else{left.clearHalo();right.clearHalo();updateVectors()}}
+    entOff.addEventListener('click',()=> setEnt(false));
+    entOn.addEventListener('click',()=> setEnt(true));
+    document.querySelectorAll('[data-bell]').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('[data-bell]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');bell=btn.dataset.bell;collapsed=false;left.markNoVector();right.markNoVector()})});
+    const measRules={'phi+':{Z:'same',X:'same'},'phi-':{Z:'same',X:'oppo'},'psi+':{Z:'oppo',X:'same'},'psi-':{Z:'oppo',X:'oppo'}};
+    function collapsePair(basis){if(!entangled)return;const rule=measRules[bell][basis];const r=Math.random()<0.5?0:1;let L,R;if(basis==='Z'){L=(r===0)?presets['z+']:presets['z-'];const RR=(rule==='same')?r:(1-r);R=(RR===0)?presets['z+']:presets['z-']}else{L=(r===0)?presets['x+']:presets['x-'];const RR=(rule==='same')?r:(1-r);R=(RR===0)?presets['x+']:presets['x-']}left.collapseTo(L[0],L[1]);right.collapseTo(R[0],R[1]);collapsed=true}
+    document.querySelectorAll('[data-meas]').forEach(btn=>{btn.addEventListener('click',()=> collapsePair(btn.dataset.meas))});
+    const startFoos=document.querySelector('#startFoos');const stopFoos=document.querySelector('#stopFoos');startFoos.addEventListener('click',()=>{left.setFoos(true)});stopFoos.addEventListener('click',()=>{left.setFoos(false)});
+    updateVectors();
+    const hud=document.querySelector('#hud');function tickHUD(){const th=+theta.value,ph=+phi.value;const x=Math.sin(th)*Math.cos(ph);const y=Math.cos(th);const z=Math.sin(th)*Math.sin(ph);hud.textContent=`Bloch vector  (x,y,z) = (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)})`;requestAnimationFrame(tickHUD)}tickHUD();
+    try{const c1=document.querySelector('#viewL canvas');const c2=document.querySelector('#viewR canvas');addTest('Canvas elements created',!!(c1&&c2));addTest('Canvas sizes > 0',!!(c1&&c1.width>0&&c1.height>0&&c2&&c2.width>0&&c2.height>0));const before=left.getInfo().dir.clone();const oldPhi=current.phi;current.phi=oldPhi+0.2;phi.value=current.phi;left.setUserPhi(current.phi);updateVectors();const after=left.getInfo().dir.clone();const moved=before.distanceTo(after)>1e-3;addTest('Slider changes Bloch vector',moved);current.phi=oldPhi;phi.value=oldPhi;updateVectors()}catch(e){addTest('Runtime checks threw error',false,String(e))}
+    renderTests();
+  })();
+  </script>
+</body>
+</html>
